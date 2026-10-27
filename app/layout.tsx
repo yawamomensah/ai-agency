@@ -1,7 +1,6 @@
 
 import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google"
-import Header from "./header";
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -39,7 +38,6 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <TooltipProvider>
-              <Header />
               {children}
             </TooltipProvider>
             <Toaster />
