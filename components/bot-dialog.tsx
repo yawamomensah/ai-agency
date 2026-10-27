@@ -42,11 +42,28 @@ const botRoles = [
   "Tutor",
 ]
 
-export function BotDialog() {
-  const [open, setOpen] = useState(false)
+export function BotDialog({
+  open: openProp,
+  onOpenChange,
+}: {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+} = {}) {
+  const [internalOpen, setInternalOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [avatarSeed, setAvatarSeed] = useState("new-bot")
   const [selectedRole, setSelectedRole] = useState("")
+  const isControlled = openProp !== undefined
+  const open = openProp ?? internalOpen
+
+  function setOpen(nextOpen: boolean) {
+    if (isControlled) {
+      onOpenChange?.(nextOpen)
+    } else {
+      setInternalOpen(nextOpen)
+    }
+  }
+
   const form = useForm<CreateBotValues>({
     resolver: zodResolver(createBotSchema),
     defaultValues: {
@@ -106,18 +123,20 @@ export function BotDialog() {
         }
       }}
     >
-      <DialogTrigger
-        render={
-          <Button
-            variant="secondary"
-            size="lg"
-            className="h-10 rounded-xl px-4"
-          >
-            <Plus data-icon="inline-start" />
-            Create a new bot
-          </Button>
-        }
-      />
+      {!isControlled && (
+        <DialogTrigger
+          render={
+            <Button
+              variant="secondary"
+              size="lg"
+              className="h-10 rounded-xl px-4"
+            >
+              <Plus data-icon="inline-start" />
+              Create a new bot
+            </Button>
+          }
+        />
+      )}
       <DialogContent className="gap-0 p-0 sm:max-w-[49rem]">
         <DialogHeader className="gap-1 px-6 pt-6">
           <DialogTitle className="text-xl">New bot</DialogTitle>
