@@ -21,10 +21,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <ClerkProvider allowedRedirectOrigins={[
-      "3000-firebase-c-compiler-project-1778731001512.cluster-lu4mup47g5gm4rtyvhzpwbfadi.cloudworkstations.dev",
-      "sinister-spooky-spirit-wpx9x94vr79259xv-3000.app.github.dev"
-    ]}>
+    <ClerkProvider
+      appearance={{ cssLayerName: "clerk" }}
+      allowedRedirectOrigins={[
+        "3000-firebase-c-compiler-project-1778731001512.cluster-lu4mup47g5gm4rtyvhzpwbfadi.cloudworkstations.dev",
+        "sinister-spooky-spirit-wpx9x94vr79259xv-3000.app.github.dev"
+      ]}
+    >
       <html
         lang="en"
         suppressHydrationWarning
