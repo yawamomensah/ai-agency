@@ -4,10 +4,20 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
-import { Plus, Shuffle } from "lucide-react"
+import { Plus, Shuffle, Trash2 } from "lucide-react"
+import { useRouter } from "next/navigation"
 
-import { createBot } from "@/actions/bot"
+import { createBot, deleteBot, updateBot } from "@/actions/bot"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { ChatAvatar } from "@/components/chat-avatar"
 import {
@@ -30,6 +40,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { toast } from "@/components/ui/toast"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { createBotSchema } from "@/db/schema"
 
@@ -45,16 +56,30 @@ const botRoles = [
 export function BotDialog({
   open: openProp,
   onOpenChange,
+  bot,
 }: {
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  bot?: {
+    id: string
+    name: string
+    avatar: string
+    job: string
+    instructions: string | null
+  }
 } = {}) {
   const [internalOpen, setInternalOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [avatarSeed, setAvatarSeed] = useState("new-bot")
-  const [selectedRole, setSelectedRole] = useState("")
+  const [avatarSeed, setAvatarSeed] = useState(bot?.avatar ?? "new-bot")
+  const [selectedRole, setSelectedRole] = useState(
+    bot && botRoles.includes(bot.job) ? bot.job : ""
+  )
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const isControlled = openProp !== undefined
   const open = openProp ?? internalOpen
+  const router = useRouter()
 
   function setOpen(nextOpen: boolean) {
     if (isControlled) {
@@ -67,50 +92,91 @@ export function BotDialog({
   const form = useForm<CreateBotValues>({
     resolver: zodResolver(createBotSchema),
     defaultValues: {
-      avatar: "new-bot",
-      name: "",
-      job: "",
-      instructions: "",
+      avatar: bot?.avatar ?? "new-bot",
+      name: bot?.name ?? "",
+      job: bot?.job ?? "",
+      instructions: bot?.instructions ?? "",
     },
   })
-  const isSubmitting = form.formState.isSubmitting
+  const isBusy = form.formState.isSubmitting || isDeleting
 
   async function onSubmit(values: CreateBotValues) {
     setFormError(null)
 
     try {
-      const result = await createBot(values)
+      const result = bot
+        ? await updateBot(bot.id, values)
+        : await createBot(values)
 
       if (!result.success) {
         setFormError(result.error)
-        if (result.fieldErrors.name?.[0]) {
-          form.setError("name", {
-            type: "server",
-            message: result.fieldErrors.name[0],
-          })
-        }
-        if (result.fieldErrors.job?.[0]) {
-          form.setError("job", {
-            type: "server",
-            message: result.fieldErrors.job[0],
-          })
-        }
-        if (result.fieldErrors.instructions?.[0]) {
-          form.setError("instructions", {
-            type: "server",
-            message: result.fieldErrors.instructions[0],
-          })
+        for (const field of ["name", "job", "instructions"] as const) {
+          const message = result.fieldErrors[field]?.[0]
+          if (message) {
+            form.setError(field, { type: "server", message })
+          }
         }
         return
       }
 
-      form.reset()
-      setAvatarSeed("new-bot")
-      setSelectedRole("")
+      toast.add({
+        title: bot ? "Bot updated" : "Bot created",
+        description: bot
+          ? `${values.name} has been updated.`
+          : `${values.name} is ready to use.`,
+        type: "success",
+      })
+      if (!bot) {
+        form.reset()
+        setAvatarSeed("new-bot")
+        setSelectedRole("")
+      } else {
+        router.refresh()
+      }
       setOpen(false)
     } catch (error) {
-      console.error("Failed to create bot", error)
-      setFormError("We couldn’t create your bot. Please try again.")
+      console.error(
+        bot ? "Failed to update bot" : "Failed to create bot",
+        error
+      )
+      setFormError(
+        bot
+          ? "We couldn’t update this bot. Please try again."
+          : "We couldn’t create your bot. Please try again."
+      )
+    }
+  }
+
+  async function onDelete() {
+    if (!bot) {
+      return
+    }
+
+    setDeleteError(null)
+    setIsDeleting(true)
+
+    try {
+      const result = await deleteBot(bot.id)
+
+      if (!result.success) {
+        setDeleteError(result.error)
+        return
+      }
+
+      toast.add({
+        title: "Bot deleted",
+        description: `${bot.name} has been deleted.`,
+        type: "success",
+      })
+      setDeleteDialogOpen(false)
+      setOpen(false)
+      router.replace("/")
+      router.refresh()
+    } catch (error) {
+      console.error("Failed to delete bot", error)
+      setDeleteError("We couldn’t delete this bot. Please try again.")
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -118,7 +184,7 @@ export function BotDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!isSubmitting) {
+        if (!isBusy) {
           setOpen(nextOpen)
         }
       }}
@@ -126,22 +192,38 @@ export function BotDialog({
       {!isControlled && (
         <DialogTrigger
           render={
-            <Button
-              variant="secondary"
-              size="lg"
-              className="h-10 rounded-xl px-4"
-            >
-              <Plus data-icon="inline-start" />
-              Create a new bot
-            </Button>
+            bot ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-8 min-w-0 justify-start gap-2 px-0 text-white hover:bg-transparent hover:text-white"
+                aria-label={`Edit ${bot.name}`}
+              >
+                <ChatAvatar seed={bot.avatar} className="size-4 shrink-0" />
+                <span className="truncate text-sm font-medium">{bot.name}</span>
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="lg"
+                className="h-10 rounded-xl px-4"
+              >
+                <Plus data-icon="inline-start" />
+                Create a new bot
+              </Button>
+            )
           }
         />
       )}
       <DialogContent className="gap-0 p-0 sm:max-w-[49rem]">
         <DialogHeader className="gap-1 px-6 pt-6">
-          <DialogTitle className="text-xl">New bot</DialogTitle>
+          <DialogTitle className="text-xl">
+            {bot ? "Edit bot" : "New bot"}
+          </DialogTitle>
           <DialogDescription className="text-base">
-            Give it a face, a name, and a job to do.
+            {bot
+              ? "Update its face, name, and job."
+              : "Give it a face, a name, and a job to do."}
           </DialogDescription>
         </DialogHeader>
 
@@ -188,7 +270,7 @@ export function BotDialog({
                   variant="outline"
                   size="sm"
                   className="ml-auto"
-                  disabled={isSubmitting}
+                  disabled={isBusy}
                   onClick={() => {
                     const nextSeed = crypto.randomUUID()
                     setAvatarSeed(nextSeed)
@@ -268,20 +350,78 @@ export function BotDialog({
           )}
 
           <DialogFooter className="-mx-6 -mb-6 p-6">
+            {bot && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="sm:mr-auto"
+                disabled={isBusy}
+                onClick={() => {
+                  setDeleteError(null)
+                  setDeleteDialogOpen(true)
+                }}
+              >
+                <Trash2 data-icon="inline-start" />
+                Delete bot
+              </Button>
+            )}
             <DialogClose
               render={
-                <Button type="button" variant="outline" disabled={isSubmitting}>
+                <Button type="button" variant="outline" disabled={isBusy}>
                   Cancel
                 </Button>
               }
             />
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Spinner data-icon="inline-start" />}
-              Create bot
+            <Button type="submit" disabled={isBusy}>
+              {form.formState.isSubmitting && (
+                <Spinner data-icon="inline-start" />
+              )}
+              {bot ? "Save changes" : "Create bot"}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
+      {bot && (
+        <AlertDialog
+          open={deleteDialogOpen}
+          onOpenChange={(nextOpen) => {
+            if (!isDeleting) {
+              setDeleteDialogOpen(nextOpen)
+              if (!nextOpen) {
+                setDeleteError(null)
+              }
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {bot.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this bot and its direct chats.
+                Group chats will be kept.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {deleteError && (
+              <Alert variant="destructive">
+                <AlertDescription>{deleteError}</AlertDescription>
+              </Alert>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>
+                Cancel
+              </AlertDialogCancel>
+              <Button
+                variant="destructive"
+                disabled={isDeleting}
+                onClick={onDelete}
+              >
+                {isDeleting && <Spinner data-icon="inline-start" />}
+                Delete bot
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </Dialog>
   )
 }
