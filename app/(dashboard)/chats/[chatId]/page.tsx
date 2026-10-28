@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server"
 import { notFound } from "next/navigation"
 
 import { ChatHeader } from "@/components/chat-header"
+import { ChatInterface } from "@/components/chat-interface"
 import { getChatById } from "@/queries/chats"
 
 export default async function Page({
@@ -19,7 +20,7 @@ export default async function Page({
   }
 
   return (
-    <main>
+    <main className="flex h-dvh min-h-0 flex-col">
       <ChatHeader
         bot={{
           id: chat.botId,
@@ -29,6 +30,7 @@ export default async function Page({
           instructions: chat.botInstructions,
         }}
       />
+      <ChatInterface key={chat.id} chatId={chat.id} />
     </main>
   )
 }
