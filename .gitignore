@@ -41,3 +41,5 @@ next-env.d.ts
 # image files
 *.png
 *.PNG
+
+.trigger
