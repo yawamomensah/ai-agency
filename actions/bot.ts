@@ -7,6 +7,7 @@ import { customAlphabet } from "nanoid"
 import { z } from "zod"
 
 import { bots, chatMembers, chats, createBotSchema } from "@/db/schema"
+import { createSandbox, deleteSandbox } from "@/lib/daytona"
 import { getDb } from "@/lib/db"
 
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12)
@@ -32,21 +33,36 @@ export async function createBot(input: unknown) {
   const botId = nanoid()
   const chatId = nanoid()
   const db = getDb()
+  const sandboxId = await createSandbox()
 
-  await db.batch([
-    db.insert(bots).values({
-      ...result.data,
-      id: botId,
-      instructions: result.data.instructions?.trim() || null,
-      userId,
-    }),
-    db.insert(chats).values({
-      id: chatId,
-      userId,
-      kind: "direct",
-    }),
-    db.insert(chatMembers).values({ chatId, botId }),
-  ])
+  try {
+    await db.batch([
+      db.insert(bots).values({
+        ...result.data,
+        id: botId,
+        instructions: result.data.instructions?.trim() || null,
+        sandboxId,
+        userId,
+      }),
+      db.insert(chats).values({
+        id: chatId,
+        userId,
+        kind: "direct",
+      }),
+      db.insert(chatMembers).values({ chatId, botId }),
+    ])
+  } catch (error) {
+    try {
+      await deleteSandbox(sandboxId)
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Failed to save bot ${botId} and clean up Daytona sandbox ${sandboxId}`
+      )
+    }
+
+    throw error
+  }
 
   revalidatePath("/")
 
@@ -118,7 +134,7 @@ export async function deleteBot(botId: unknown) {
 
   const db = getDb()
   const [bot] = await db
-    .select({ id: bots.id })
+    .select({ id: bots.id, sandboxId: bots.sandboxId })
     .from(bots)
     .where(and(eq(bots.id, parsedBotId.data), eq(bots.userId, userId)))
     .limit(1)
@@ -128,6 +144,10 @@ export async function deleteBot(botId: unknown) {
       success: false as const,
       error: "This bot could not be found.",
     }
+  }
+
+  if (bot.sandboxId) {
+    await deleteSandbox(bot.sandboxId)
   }
 
   await db.batch([

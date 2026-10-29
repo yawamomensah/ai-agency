@@ -5,6 +5,8 @@ import {
   useLoadTranscript,
   useTriggerChatTransport,
 } from "@trigger.dev/sdk/chat/react"
+import type { InferChatUIMessage } from "@trigger.dev/sdk/chat/react"
+import Image from "next/image"
 import { MessageSquare } from "lucide-react"
 import { useState } from "react"
 
@@ -25,12 +27,86 @@ import {
   MessageResponse,
 } from "@/components/ai-elements/message"
 import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool"
+import {
   PromptInput,
   type PromptInputMessage,
   PromptInputSubmit,
   PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input"
 import type { chatAgent } from "@/trigger/chat"
+
+type ChatMessage = InferChatUIMessage<typeof chatAgent>
+type ChatToolPart = Extract<
+  ChatMessage["parts"][number],
+  { type: "dynamic-tool" | `tool-${string}` }
+>
+
+const toolTitles: Record<string, string> = {
+  "tool-bash": "Run command",
+  "tool-keyboardPress": "Press key",
+  "tool-keyboardType": "Type text",
+  "tool-listFiles": "List files",
+  "tool-mouseClick": "Click",
+  "tool-mouseMove": "Move mouse",
+  "tool-mouseScroll": "Scroll",
+  "tool-readFile": "Read file",
+  "tool-showScreen": "Show screen",
+  "tool-viewScreen": "View screen",
+  "tool-writeFile": "Write file",
+}
+
+function isToolPart(part: ChatMessage["parts"][number]): part is ChatToolPart {
+  return part.type === "dynamic-tool" || part.type.startsWith("tool-")
+}
+
+function renderToolPart(part: ChatToolPart, key: string) {
+  if (part.type === "tool-viewScreen") {
+    return null
+  }
+
+  const screenshot = part.type === "tool-showScreen" ? part.output : undefined
+
+  return (
+    <Tool
+      key={key}
+      defaultOpen={
+        part.type === "tool-showScreen" || part.state === "input-available"
+      }
+    >
+      <ToolHeader
+        state={part.state}
+        title={toolTitles[part.type] ?? part.type}
+        type={part.type}
+      />
+      <ToolContent>
+        <ToolInput input={part.input} />
+        {screenshot ? (
+          <div className="space-y-2">
+            <h4 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Screen
+            </h4>
+            <Image
+              alt="Sandbox screen requested by the user"
+              className="h-auto max-w-full rounded-md border"
+              height={screenshot.height}
+              src={`data:${screenshot.mediaType};base64,${screenshot.data}`}
+              unoptimized
+              width={screenshot.width}
+            />
+          </div>
+        ) : (
+          <ToolOutput errorText={part.errorText} output={part.output} />
+        )}
+      </ToolContent>
+    </Tool>
+  )
+}
 
 export function ChatInterface({ chatId }: { chatId: string }) {
   const transport = useTriggerChatTransport<typeof chatAgent>({
@@ -73,16 +149,17 @@ function LoadedChatInterface({
   transport,
 }: {
   chatId: string
-  initialMessages: ReturnType<typeof useLoadTranscript>["messages"]
+  initialMessages: ChatMessage[]
   transport: ReturnType<typeof useTriggerChatTransport>
 }) {
   const [input, setInput] = useState("")
-  const { messages, sendMessage, status, error, regenerate, stop } = useChat({
-    id: chatId,
-    messages: initialMessages,
-    resume: initialMessages.length > 0,
-    transport,
-  })
+  const { messages, sendMessage, status, error, regenerate, stop } =
+    useChat<ChatMessage>({
+      id: chatId,
+      messages: initialMessages,
+      resume: initialMessages.length > 0,
+      transport,
+    })
 
   const handleSubmit = (message: PromptInputMessage) => {
     if (
@@ -108,19 +185,31 @@ function LoadedChatInterface({
               description="Send a message to begin chatting."
             />
           ) : (
-            messages.map((message) => (
-              <Message from={message.role} key={message.id}>
-                <MessageContent>
-                  {message.parts.map((part, index) =>
-                    part.type === "text" ? (
-                      <MessageResponse key={`${message.id}-${index}`}>
-                        {part.text}
-                      </MessageResponse>
-                    ) : null
-                  )}
-                </MessageContent>
-              </Message>
-            ))
+            messages.map((message) => {
+              const visibleParts = message.parts.filter(
+                (part) => part.type !== "tool-viewScreen"
+              )
+
+              if (visibleParts.length === 0) {
+                return null
+              }
+
+              return (
+                <Message from={message.role} key={message.id}>
+                  <MessageContent>
+                    {visibleParts.map((part, index) =>
+                      part.type === "text" ? (
+                        <MessageResponse key={`${message.id}-${index}`}>
+                          {part.text}
+                        </MessageResponse>
+                      ) : isToolPart(part) ? (
+                        renderToolPart(part, `${message.id}-${index}`)
+                      ) : null
+                    )}
+                  </MessageContent>
+                </Message>
+              )
+            })
           )}
         </ConversationContent>
         <ConversationScrollButton />

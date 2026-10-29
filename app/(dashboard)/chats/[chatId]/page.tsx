@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server"
 import { notFound } from "next/navigation"
 
 import { ChatHeader } from "@/components/chat-header"
-import { ChatInterface } from "@/components/chat-interface"
+import { ChatInterface } from "@/components/chat"
 import { getChatById } from "@/queries/chats"
 
 export default async function Page({
