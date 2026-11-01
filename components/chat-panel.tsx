@@ -15,6 +15,7 @@ import type { PanelImperativeHandle } from "react-resizable-panels"
 import { Maximize2, X } from "lucide-react"
 
 import { getSandboxVncUrl } from "@/actions/chat"
+import { usePlanUpgradeToast } from "@/components/plan-upgrade-toast"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -69,6 +70,7 @@ export function useChatPanel() {
 
 export function ChatSidePanel({ chatId }: { chatId: string }) {
   const { panelRef, setIsOpen } = useChatPanel()
+  const [hasOpened, setHasOpened] = useState(false)
 
   return (
     <ResizablePanel
@@ -77,15 +79,28 @@ export function ChatSidePanel({ chatId }: { chatId: string }) {
       defaultSize="0%"
       maxSize="50%"
       minSize="0%"
-      onResize={(size) => setIsOpen(size.asPercentage > 0)}
+      onResize={(size) => {
+        const nextIsOpen = size.asPercentage > 0
+        setIsOpen(nextIsOpen)
+        if (nextIsOpen) {
+          setHasOpened(true)
+        }
+      }}
       panelRef={panelRef}
     >
-      <SandboxPreview chatId={chatId} />
+      <SandboxPreview chatId={chatId} enabled={hasOpened} />
     </ResizablePanel>
   )
 }
 
-function SandboxPreview({ chatId }: { chatId: string }) {
+function SandboxPreview({
+  chatId,
+  enabled,
+}: {
+  chatId: string
+  enabled: boolean
+}) {
+  const showPlanUpgradeToast = usePlanUpgradeToast()
   const previewHostRef = useRef<HTMLDivElement>(null)
   const dialogHostRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -95,16 +110,29 @@ function SandboxPreview({ chatId }: { chatId: string }) {
   const [frameReady, setFrameReady] = useState(false)
 
   useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
     let active = true
 
     getSandboxVncUrl(chatId)
-      .then((url) => {
+      .then((result) => {
         if (!active) {
           return
         }
 
+        if (!result.success) {
+          if (result.upgradeRequired) {
+            showPlanUpgradeToast("Upgrade to Pro to connect to bot sandboxes.")
+          }
+          setError("Sandbox access requires the Pro plan.")
+          setIsLoading(false)
+          return
+        }
+
         const iframe = document.createElement("iframe")
-        iframe.src = url
+        iframe.src = result.url
         iframe.title = "Daytona sandbox desktop"
         iframe.allow = "clipboard-read; clipboard-write; fullscreen"
         iframe.allowFullscreen = true
@@ -127,7 +155,7 @@ function SandboxPreview({ chatId }: { chatId: string }) {
       iframeRef.current?.remove()
       iframeRef.current = null
     }
-  }, [chatId])
+  }, [chatId, enabled, showPlanUpgradeToast])
 
   useLayoutEffect(() => {
     if (!frameReady) {

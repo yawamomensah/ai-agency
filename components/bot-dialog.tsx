@@ -1,5 +1,6 @@
 "use client"
 
+import { useAuth } from "@clerk/nextjs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
@@ -43,6 +44,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/toast"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { createBotSchema } from "@/db/schema"
+import { usePlanUpgradeToast } from "@/components/plan-upgrade-toast"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 
 type CreateBotValues = z.infer<typeof createBotSchema>
 
@@ -79,6 +82,8 @@ export function BotDialog({
   const [isDeleting, setIsDeleting] = useState(false)
   const isControlled = openProp !== undefined
   const open = openProp ?? internalOpen
+  const { has, isLoaded } = useAuth()
+  const showPlanUpgradeToast = usePlanUpgradeToast()
   const router = useRouter()
 
   function setOpen(nextOpen: boolean) {
@@ -103,15 +108,25 @@ export function BotDialog({
   async function onSubmit(values: CreateBotValues) {
     setFormError(null)
 
+    if (!bot && !has?.({ plan: PAID_PLAN_SLUG })) {
+      showPlanUpgradeToast("Upgrade to Pro to create bots and sandboxes.")
+      return
+    }
+
     try {
       const result = bot
         ? await updateBot(bot.id, values)
         : await createBot(values)
 
+      if ("upgradeRequired" in result && result.upgradeRequired) {
+        showPlanUpgradeToast(result.error)
+        return
+      }
+
       if (!result.success) {
         setFormError(result.error)
         for (const field of ["name", "job", "instructions"] as const) {
-          const message = result.fieldErrors[field]?.[0]
+          const message = result.fieldErrors?.[field]?.[0]
           if (message) {
             form.setError(field, { type: "server", message })
           }
@@ -185,35 +200,50 @@ export function BotDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (!isBusy) {
+          if (nextOpen && !bot && !has?.({ plan: PAID_PLAN_SLUG })) {
+            showPlanUpgradeToast("Upgrade to Pro to create bots and sandboxes.")
+            return
+          }
+
           setOpen(nextOpen)
         }
       }}
     >
-      {!isControlled && (
+      {!isControlled && bot && (
         <DialogTrigger
           render={
-            bot ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-8 min-w-0 justify-start gap-2 px-0 text-white hover:bg-transparent hover:text-white"
-                aria-label={`Edit ${bot.name}`}
-              >
-                <ChatAvatar seed={bot.avatar} className="size-4 shrink-0" />
-                <span className="truncate text-sm font-medium">{bot.name}</span>
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="lg"
-                className="h-10 rounded-xl px-4"
-              >
-                <Plus data-icon="inline-start" />
-                Create a new bot
-              </Button>
-            )
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-8 min-w-0 justify-start gap-2 px-0 text-white hover:bg-transparent hover:text-white"
+              aria-label={`Edit ${bot.name}`}
+            >
+              <ChatAvatar seed={bot.avatar} className="size-4 shrink-0" />
+              <span className="truncate text-sm font-medium">{bot.name}</span>
+            </Button>
           }
         />
+      )}
+      {!isControlled && !bot && (
+        <Button
+          disabled={!isLoaded}
+          onClick={() => {
+            if (!has?.({ plan: PAID_PLAN_SLUG })) {
+              showPlanUpgradeToast(
+                "Upgrade to Pro to create bots and sandboxes."
+              )
+              return
+            }
+
+            setOpen(true)
+          }}
+          variant="secondary"
+          size="lg"
+          className="h-10 rounded-xl px-4"
+        >
+          <Plus data-icon="inline-start" />
+          Create a new bot
+        </Button>
       )}
       <DialogContent className="gap-0 p-0 sm:max-w-[49rem]">
         <DialogHeader className="gap-1 px-6 pt-6">

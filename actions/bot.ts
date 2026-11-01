@@ -7,6 +7,7 @@ import { customAlphabet } from "nanoid"
 import { z } from "zod"
 
 import { bots, chatMembers, chats, createBotSchema } from "@/db/schema"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 import { createSandbox, deleteSandbox } from "@/lib/daytona"
 import { getDb } from "@/lib/db"
 
@@ -14,7 +15,7 @@ const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12)
 const botIdSchema = z.string().trim().min(1).max(128)
 
 export async function createBot(input: unknown) {
-  const { userId } = await auth()
+  const { userId, has } = await auth()
 
   if (!userId) {
     throw new Error("Unauthorized")
@@ -27,6 +28,14 @@ export async function createBot(input: unknown) {
       success: false as const,
       error: "Please check the bot details and try again.",
       fieldErrors: result.error.flatten().fieldErrors,
+    }
+  }
+
+  if (!has({ plan: PAID_PLAN_SLUG })) {
+    return {
+      success: false as const,
+      upgradeRequired: true as const,
+      error: "Upgrade to Pro to create bots and sandboxes.",
     }
   }
 

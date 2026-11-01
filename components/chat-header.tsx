@@ -4,13 +4,16 @@ import { Monitor } from "lucide-react"
 
 import { BotDialog } from "@/components/bot-dialog"
 import { GroupChatDialog } from "@/components/group-chat-dialog"
+import { usePlanUpgradeToast } from "@/components/plan-upgrade-toast"
 import { Button } from "@/components/ui/button"
 import { useChatPanel } from "@/components/chat-panel"
 
 export function ChatHeader({
   bot,
   group,
+  canUsePaidFeatures,
 }: {
+  canUsePaidFeatures: boolean
   bot?: {
     id: string
     name: string
@@ -35,19 +38,31 @@ export function ChatHeader({
           bots={group.availableBots}
         />
       ) : null}
-      {bot && <DesktopPanelButton />}
+      {bot && <DesktopPanelButton canUsePaidFeatures={canUsePaidFeatures} />}
     </header>
   )
 }
 
-function DesktopPanelButton() {
+function DesktopPanelButton({
+  canUsePaidFeatures,
+}: {
+  canUsePaidFeatures: boolean
+}) {
   const { isOpen, togglePanel } = useChatPanel()
+  const showPlanUpgradeToast = usePlanUpgradeToast()
 
   return (
     <Button
       aria-expanded={isOpen}
       aria-label="Toggle desktop panel"
-      onClick={togglePanel}
+      onClick={() => {
+        if (!isOpen && !canUsePaidFeatures) {
+          showPlanUpgradeToast("Upgrade to Pro to connect to bot sandboxes.")
+          return
+        }
+
+        togglePanel()
+      }}
       type="button"
       variant="ghost"
       size="icon-sm"

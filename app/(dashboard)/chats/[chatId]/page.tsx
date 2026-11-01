@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { ChatHeader } from "@/components/chat-header"
 import { ChatInterface } from "@/components/chat"
 import { ChatPanelProvider, ChatSidePanel } from "@/components/chat-panel"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -18,6 +19,8 @@ export default async function Page({
   params: Promise<{ chatId: string }>
 }) {
   await auth.protect()
+  const { has } = await auth()
+  const canUsePaidFeatures = has({ plan: PAID_PLAN_SLUG })
 
   const { chatId } = await params
   const chat = await getChatById(chatId)
@@ -32,6 +35,7 @@ export default async function Page({
     return (
       <main className="flex h-dvh min-h-0 flex-col overflow-hidden">
         <ChatHeader
+          canUsePaidFeatures={canUsePaidFeatures}
           group={{
             id: chat.id,
             name: chat.name ?? "Group chat",
@@ -62,6 +66,7 @@ export default async function Page({
           <ResizablePanel defaultSize="100%" minSize="50%">
             <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
               <ChatHeader
+                canUsePaidFeatures={canUsePaidFeatures}
                 bot={{
                   id: chat.botId,
                   name: chat.botName,

@@ -1,10 +1,12 @@
 "use server"
 
+import { auth } from "@clerk/nextjs/server"
 import { auth as triggerAuth } from "@trigger.dev/sdk"
 import { chat, defaultStorage } from "@trigger.dev/sdk/ai"
 import { z } from "zod"
 
 import { createDaytonaClient } from "@/lib/daytona"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 import { getChatById } from "@/queries/chats"
 
 const chatIdSchema = z.string().trim().min(1).max(128)
@@ -23,14 +25,28 @@ async function requireChatAccess(input: unknown) {
   return authorizedChat
 }
 
+async function requirePaidPlan() {
+  const { userId, has } = await auth()
+
+  if (!userId) {
+    throw new Error("Unauthorized")
+  }
+
+  if (!has({ plan: PAID_PLAN_SLUG })) {
+    throw new Error("A Pro plan is required to use bots and sandboxes.")
+  }
+}
+
 export async function startChatSession({ chatId }: { chatId: string }) {
   const authorizedChat = await requireChatAccess(chatId)
+  await requirePaidPlan()
 
   return startSession({ chatId: authorizedChat.id })
 }
 
 export async function mintChatAccessToken(chatId: string) {
   const authorizedChat = await requireChatAccess(chatId)
+  await requirePaidPlan()
 
   return triggerAuth.createPublicToken({
     scopes: {
@@ -49,6 +65,15 @@ export async function loadChatTranscript({ chatId }: { chatId: string }) {
 
 export async function getSandboxVncUrl(chatId: string) {
   const chat = await requireChatAccess(chatId)
+  const { userId, has } = await auth()
+
+  if (!userId) {
+    throw new Error("Unauthorized")
+  }
+
+  if (!has({ plan: PAID_PLAN_SLUG })) {
+    return { success: false as const, upgradeRequired: true as const }
+  }
 
   if (!chat.sandboxId) {
     throw new Error("This bot does not have an assigned Daytona sandbox.")
@@ -71,5 +96,5 @@ export async function getSandboxVncUrl(chatId: string) {
   vncUrl.searchParams.set("autoconnect", "true")
   vncUrl.searchParams.set("resize", "scale")
 
-  return vncUrl.toString()
+  return { success: true as const, url: vncUrl.toString() }
 }

@@ -1,5 +1,6 @@
 "use client"
 
+import { useAuth } from "@clerk/nextjs"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
 import { Controller, useForm } from "react-hook-form"
@@ -48,7 +49,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
+import { usePlanUpgradeToast } from "@/components/plan-upgrade-toast"
 import { createGroupChatSchema } from "@/db/schema"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 
 type GroupChatValues = z.infer<typeof createGroupChatSchema>
 type GroupChatBot = {
@@ -79,6 +82,8 @@ export function GroupChatDialog({
   const [isDeleting, setIsDeleting] = useState(false)
   const [internalOpen, setInternalOpen] = useState(false)
   const router = useRouter()
+  const { has, isLoaded } = useAuth()
+  const showPlanUpgradeToast = usePlanUpgradeToast()
   const isControlled = openProp !== undefined
   const open = openProp ?? internalOpen
   const form = useForm<GroupChatValues>({
@@ -109,15 +114,25 @@ export function GroupChatDialog({
   async function onSubmit(values: GroupChatValues) {
     setFormError(null)
 
+    if (!chat && !has?.({ plan: PAID_PLAN_SLUG })) {
+      showPlanUpgradeToast("Upgrade to Pro to use bots in group chats.")
+      return
+    }
+
     try {
       const result = chat
         ? await updateGroupChat(chat.id, values)
         : await createGroupChat(values)
 
+      if ("upgradeRequired" in result && result.upgradeRequired) {
+        showPlanUpgradeToast(result.error)
+        return
+      }
+
       if (!result.success) {
         setFormError(result.error)
         for (const field of ["name", "botIds"] as const) {
-          const message = result.fieldErrors[field]?.[0]
+          const message = result.fieldErrors?.[field]?.[0]
           if (message) {
             form.setError(field, { type: "server", message })
           }
@@ -190,6 +205,17 @@ export function GroupChatDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (!isBusy) {
+          if (nextOpen && !chat) {
+            if (!isLoaded) {
+              return
+            }
+
+            if (!has?.({ plan: PAID_PLAN_SLUG })) {
+              showPlanUpgradeToast("Upgrade to Pro to use bots in group chats.")
+              return
+            }
+          }
+
           setOpen(nextOpen)
         }
       }}

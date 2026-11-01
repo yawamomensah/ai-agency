@@ -7,12 +7,13 @@ import { customAlphabet } from "nanoid"
 import { z } from "zod"
 
 import { bots, chatMembers, chats, createGroupChatSchema } from "@/db/schema"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 import { getDb } from "@/lib/db"
 
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12)
 
 export async function createGroupChat(input: unknown) {
-  const { userId } = await auth()
+  const { userId, has } = await auth()
 
   if (!userId) {
     throw new Error("Unauthorized")
@@ -25,6 +26,14 @@ export async function createGroupChat(input: unknown) {
       success: false as const,
       error: "Please check the group chat details and try again.",
       fieldErrors: result.error.flatten().fieldErrors,
+    }
+  }
+
+  if (!has({ plan: PAID_PLAN_SLUG })) {
+    return {
+      success: false as const,
+      upgradeRequired: true as const,
+      error: "Upgrade to Pro to use bots in group chats.",
     }
   }
 

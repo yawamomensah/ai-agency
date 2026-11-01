@@ -1,5 +1,6 @@
 "use client"
 
+import { useAuth } from "@clerk/nextjs"
 import { useChat } from "@ai-sdk/react"
 import {
   useLoadTranscript,
@@ -47,7 +48,9 @@ import {
 } from "@/components/ai-elements/prompt-input"
 import { ChatAvatar } from "@/components/chat-avatar"
 import { Badge } from "@/components/ui/badge"
+import { usePlanUpgradeToast } from "@/components/plan-upgrade-toast"
 import { SelectGroup } from "@/components/ui/select"
+import { PAID_PLAN_SLUG } from "@/lib/billing"
 import type { chatAgent } from "@/trigger/chat"
 
 type ChatMessage = InferChatUIMessage<typeof chatAgent>
@@ -227,6 +230,9 @@ export function ChatInterface({
   chatId: string
   groupBots?: ChatBot[]
 }) {
+  const { has, isLoaded } = useAuth()
+  const canUsePaidFeatures =
+    isLoaded && Boolean(has?.({ plan: PAID_PLAN_SLUG }))
   const transport = useTriggerChatTransport<typeof chatAgent>({
     task: "chat-agent",
     accessToken: ({ chatId }) => mintChatAccessToken(chatId),
@@ -252,10 +258,16 @@ export function ChatInterface({
     )
   }
 
+  if (!isLoaded) {
+    return null
+  }
+
   return (
     <LoadedChatInterface
       chatId={chatId}
+      canUsePaidFeatures={canUsePaidFeatures}
       groupBots={groupBots}
+      isLoaded={isLoaded}
       initialMessages={initialMessages}
       transport={transport}
     />
@@ -264,15 +276,20 @@ export function ChatInterface({
 
 function LoadedChatInterface({
   chatId,
+  canUsePaidFeatures,
   groupBots,
+  isLoaded,
   initialMessages,
   transport,
 }: {
   chatId: string
+  canUsePaidFeatures: boolean
   groupBots?: ChatBot[]
+  isLoaded: boolean
   initialMessages: ChatMessage[]
   transport: ReturnType<typeof useTriggerChatTransport>
 }) {
+  const showPlanUpgradeToast = usePlanUpgradeToast()
   const [input, setInput] = useState("")
   const [selectedBotId, setSelectedBotId] = useState(groupBots?.[0]?.id ?? "")
   const selectedBot = groupBots?.find((bot) => bot.id === selectedBotId)
@@ -280,11 +297,20 @@ function LoadedChatInterface({
     useChat<ChatMessage>({
       id: chatId,
       messages: initialMessages,
-      resume: initialMessages.length > 0,
+      resume: initialMessages.length > 0 && canUsePaidFeatures,
       transport,
     })
 
   const handleSubmit = (message: PromptInputMessage) => {
+    if (!isLoaded) {
+      return
+    }
+
+    if (!canUsePaidFeatures) {
+      showPlanUpgradeToast("Upgrade to Pro to use bots and sandboxes.")
+      return
+    }
+
     if (
       !message.text.trim() ||
       status === "submitted" ||
@@ -300,6 +326,23 @@ function LoadedChatInterface({
       sendMessage({ text: message.text })
     }
     setInput("")
+  }
+
+  const handleRegenerate = () => {
+    if (!isLoaded) {
+      return
+    }
+
+    if (!canUsePaidFeatures) {
+      showPlanUpgradeToast("Upgrade to Pro to use bots and sandboxes.")
+      return
+    }
+
+    if (groupBots?.length) {
+      regenerate({ metadata: { botId: selectedBotId } })
+    } else {
+      regenerate()
+    }
   }
 
   return (
@@ -422,11 +465,7 @@ function LoadedChatInterface({
             <p role="alert">Something went wrong. Please try again.</p>
             <button
               className="underline underline-offset-4"
-              onClick={() =>
-                groupBots?.length
-                  ? regenerate({ metadata: { botId: selectedBotId } })
-                  : regenerate()
-              }
+              onClick={handleRegenerate}
               type="button"
             >
               Retry

@@ -8,6 +8,7 @@ import { z } from "zod"
 
 import { bots, chatMembers, chats } from "@/db/schema"
 import { getDb } from "@/lib/db"
+import { userHasPaidPlan } from "@/lib/clerk-billing"
 import { createSandboxTools } from "@/trigger/sandbox-tools"
 
 const HANDOFF_SESSION_PREFIX = "handoff:"
@@ -32,6 +33,7 @@ async function getSelectedBot(chatId: string, botId?: string) {
       chatId: chats.id,
       chatKind: chats.kind,
       chatName: chats.name,
+      userId: chats.userId,
       id: bots.id,
       name: bots.name,
       job: bots.job,
@@ -64,6 +66,7 @@ async function getSelectedBot(chatId: string, botId?: string) {
     chatId: parentChatId,
     chatKind: bot.chatKind,
     chatName: bot.chatName,
+    userId: bot.userId,
     members: chatBots.map((member) => ({
       id: member.id,
       name: member.name,
@@ -137,6 +140,13 @@ export type ChatUIMessage = UIMessage
 export const chatAgent = chat.withUIMessage<ChatUIMessage>().agent({
   id: "chat-agent",
   clientDataSchema: z.object({ botId: z.string().min(1).optional() }),
+  onTurnStart: async ({ chatId, clientData }) => {
+    const context = await getSelectedBot(chatId, clientData?.botId)
+
+    if (!(await userHasPaidPlan(context.userId))) {
+      throw new Error("A Pro plan is required to use bots and sandboxes.")
+    }
+  },
   tools: async ({ chatId, clientData }) => {
     const context = await getSelectedBot(chatId, clientData?.botId)
     const sandboxTools = createSandboxTools(context.bot.sandboxId)
