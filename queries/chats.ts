@@ -11,14 +11,17 @@ export async function getChatById(chatId: string) {
     return null
   }
 
-  const [chat] = await getDb()
+  const chatRows = await getDb()
     .select({
       id: chats.id,
+      kind: chats.kind,
+      name: chats.name,
       botId: bots.id,
       botName: bots.name,
       botAvatar: bots.avatar,
       botJob: bots.job,
       botInstructions: bots.instructions,
+      sandboxId: bots.sandboxId,
     })
     .from(chats)
     .innerJoin(chatMembers, eq(chatMembers.chatId, chats.id))
@@ -28,7 +31,22 @@ export async function getChatById(chatId: string) {
     )
     .where(and(eq(chats.id, chatId), eq(chats.userId, userId)))
     .orderBy(asc(chatMembers.joinedAt), asc(chatMembers.botId))
-    .limit(1)
 
-  return chat ?? null
+  const firstBot = chatRows[0]
+
+  if (!firstBot) {
+    return null
+  }
+
+  return {
+    ...firstBot,
+    bots: chatRows.map((row) => ({
+      id: row.botId,
+      name: row.botName,
+      avatar: row.botAvatar,
+      job: row.botJob,
+      instructions: row.botInstructions,
+      sandboxId: row.sandboxId,
+    })),
+  }
 }

@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core"
 import { createInsertSchema } from "drizzle-zod"
 import { customAlphabet } from "nanoid"
+import { z } from "zod"
 
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12)
 
@@ -104,3 +105,26 @@ export const createBotSchema = insertBotSchema.omit({
   sandboxId: true,
   createdAt: true,
 })
+
+export const insertChatSchema = createInsertSchema(chats).extend({
+  name: z.string().trim().min(1, "Group name is required").max(80).nullable(),
+})
+
+export const createGroupChatSchema = insertChatSchema
+  .omit({
+    id: true,
+    userId: true,
+    kind: true,
+    lastMessagePreview: true,
+    lastMessageAt: true,
+    createdAt: true,
+  })
+  .extend({
+    name: z.string().trim().min(1, "Group name is required").max(80),
+    botIds: z
+      .array(z.string().trim().min(1).max(128))
+      .min(2, "Choose at least two bots.")
+      .refine((botIds) => new Set(botIds).size === botIds.length, {
+        message: "Choose each bot only once.",
+      }),
+  })

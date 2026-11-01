@@ -1,4 +1,4 @@
-import type { Daytona } from "@daytona/sdk"
+import { DaytonaFileNotFoundError, type Daytona } from "@daytona/sdk"
 import { tool } from "ai"
 import { posix } from "node:path"
 import { z } from "zod"
@@ -6,6 +6,8 @@ import { z } from "zod"
 import { createDaytonaClient } from "@/lib/daytona"
 
 const MAX_FILE_BYTES = 64 * 1024
+const MAX_MEMORY_BYTES = 16 * 1024
+const MEMORY_FILE = "workspace/.bot-memory.md"
 const MAX_COMMAND_OUTPUT_LENGTH = 12_000
 const MAX_LISTED_FILES = 200
 
@@ -126,6 +128,52 @@ export function createSandboxTools(sandboxId: string | null) {
   })
 
   return {
+    getMemory: tool({
+      description:
+        "Read this bot's persistent memory shared across its private and group chats. Use when relevant personal context, preferences, or prior details may help answer the user.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const sandbox = await getSandbox()
+
+        try {
+          const file = await sandbox.fs.getFileDetails(MEMORY_FILE)
+          if (file.size > MAX_MEMORY_BYTES) {
+            throw new Error(
+              "The bot memory file exceeds the supported 16 KiB limit."
+            )
+          }
+
+          const contents = await sandbox.fs.downloadFile(MEMORY_FILE)
+          return { memory: contents.toString("utf8") }
+        } catch (error) {
+          if (error instanceof DaytonaFileNotFoundError) {
+            return { memory: "" }
+          }
+
+          throw error
+        }
+      },
+    }),
+    setMemory: tool({
+      description:
+        "Replace this bot's persistent memory shared across its private and group chats. Preserve useful existing memory when adding facts; keep it concise and only store durable, relevant context.",
+      inputSchema: z.object({
+        memory: z.string().max(MAX_MEMORY_BYTES),
+      }),
+      execute: async ({ memory }) => {
+        if (Buffer.byteLength(memory, "utf8") > MAX_MEMORY_BYTES) {
+          throw new Error("Bot memory cannot exceed 16 KiB.")
+        }
+
+        const sandbox = await getSandbox()
+        await sandbox.fs.uploadFile(Buffer.from(memory, "utf8"), MEMORY_FILE)
+
+        return {
+          bytesWritten: Buffer.byteLength(memory, "utf8"),
+          saved: true,
+        }
+      },
+    }),
     bash: tool({
       description:
         "Run a command in this bot's assigned sandbox, with the working directory set to workspace/. Commands time out after 60 seconds.",

@@ -8,6 +8,8 @@ import { usePathname, useRouter } from "next/navigation"
 
 import { BotDialog } from "@/components/bot-dialog"
 import { ChatAvatar } from "@/components/chat-avatar"
+import { GroupChatAvatar } from "@/components/group-chat-avatar"
+import { GroupChatDialog } from "@/components/group-chat-dialog"
 import {
   Command,
   CommandDialog,
@@ -34,6 +36,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -41,14 +44,29 @@ import {
 type SidebarChat = {
   id: string
   title: string
-  avatarSeed: string
+  kind: "direct" | "group"
+  avatarSeeds: string[]
   preview: string
   lastMessageAt: string
   timeLabel: string
 }
 
-export function AppSidebar({ chats }: { chats: SidebarChat[] }) {
+type SidebarBot = {
+  id: string
+  name: string
+  avatar: string
+  job: string
+}
+
+export function AppSidebar({
+  chats,
+  bots,
+}: {
+  chats: SidebarChat[]
+  bots: SidebarBot[]
+}) {
   const [botDialogOpen, setBotDialogOpen] = useState(false)
+  const [groupChatDialogOpen, setGroupChatDialogOpen] = useState(false)
   const [chatSearchOpen, setChatSearchOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
@@ -82,14 +100,18 @@ export function AppSidebar({ chats }: { chats: SidebarChat[] }) {
                 }
               />
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setBotDialogOpen(true)}>
-                  <Plus />
-                  Create new bot
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <UsersRound />
-                  Create group chat
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => setBotDialogOpen(true)}>
+                    <Plus />
+                    Create new bot
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setGroupChatDialogOpen(true)}
+                  >
+                    <UsersRound />
+                    Create group chat
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
@@ -112,6 +134,11 @@ export function AppSidebar({ chats }: { chats: SidebarChat[] }) {
           </SidebarMenuItem>
         </SidebarMenu>
         <BotDialog open={botDialogOpen} onOpenChange={setBotDialogOpen} />
+        <GroupChatDialog
+          bots={bots}
+          open={groupChatDialogOpen}
+          onOpenChange={setGroupChatDialogOpen}
+        />
       </SidebarHeader>
       <CommandDialog
         open={chatSearchOpen}
@@ -134,7 +161,17 @@ export function AppSidebar({ chats }: { chats: SidebarChat[] }) {
                   }}
                   className="py-2"
                 >
-                  <ChatAvatar seed={chat.avatarSeed} className="shrink-0" />
+                  {chat.kind === "group" ? (
+                    <GroupChatAvatar
+                      seeds={chat.avatarSeeds}
+                      className="shrink-0"
+                    />
+                  ) : (
+                    <ChatAvatar
+                      seed={chat.avatarSeeds[0]}
+                      className="shrink-0"
+                    />
+                  )}
                   <div className="flex min-w-0 flex-col gap-1">
                     <span className="truncate font-medium">{chat.title}</span>
                     <span className="truncate text-xs text-muted-foreground">
@@ -170,10 +207,17 @@ export function AppSidebar({ chats }: { chats: SidebarChat[] }) {
                         tooltip={chat.title}
                         className="h-auto min-h-16 items-start py-2 group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:min-h-8! group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:py-2!"
                       >
-                        <ChatAvatar
-                          seed={chat.avatarSeed}
-                          className="mt-1 shrink-0 group-data-[collapsible=icon]:mt-0 group-data-[collapsible=icon]:size-4"
-                        />
+                        {chat.kind === "group" ? (
+                          <GroupChatAvatar
+                            seeds={chat.avatarSeeds}
+                            className="mt-1 group-data-[collapsible=icon]:mt-0 group-data-[collapsible=icon]:size-4"
+                          />
+                        ) : (
+                          <ChatAvatar
+                            seed={chat.avatarSeeds[0]}
+                            className="mt-1 shrink-0 group-data-[collapsible=icon]:mt-0 group-data-[collapsible=icon]:size-4"
+                          />
+                        )}
                         <div className="flex min-w-0 flex-1 flex-col gap-1 group-data-[collapsible=icon]:hidden">
                           <div className="flex min-w-0 items-center justify-between gap-2">
                             <span className="truncate font-medium">
